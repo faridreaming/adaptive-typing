@@ -1,3 +1,28 @@
+import { BrowserRouter, Routes, Route, Link } from 'react-router-dom'
+import TestPage from './pages/TestPage'
+import DashboardPage from './pages/DashboardPage'
+
+function Nav() {
+  return (
+    <nav className="flex gap-4 p-4 border-b border-neutral-800">
+      <Link to="/" className="hover:underline">
+        Test
+      </Link>
+      <Link to="/dashboard" className="hover:underline">
+        Dashboard
+      </Link>
+    </nav>
+  )
+}
+
 export default function App() {
-  return <h1>Halo duniaku bakaaa</h1>
+  return (
+    <BrowserRouter>
+      <Nav />
+      <Routes>
+        <Route path="/" element={<TestPage />} />
+        <Route path="/dashboard" element={<DashboardPage />} />
+      </Routes>
+    </BrowserRouter>
+  )
 }
