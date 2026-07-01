@@ -1,6 +1,8 @@
 import { useState, useMemo, useRef } from 'react'
-import { corpusId, corpusEn } from '../data/corpus'
-import { calculateWpm, calculateAccuracy } from '../lib/scoring'
+import { corpusId, corpusEn } from '#data/corpus'
+import { calculateWpm, calculateAccuracy } from '#lib/scoring'
+import { Button } from '#components/ui/button'
+import { Card, CardContent } from '#components/ui/card'
 
 type Language = 'id' | 'en'
 
@@ -63,30 +65,32 @@ export default function TestPage() {
   }
 
   return (
-    <div className="p-8 max-w-2xl mx-auto">
-      <div className="flex gap-2 mb-6">
-        <button
+    <div className="mx-auto max-w-2xl p-8">
+      <div className="mb-8 flex gap-2">
+        <Button
+          variant={language === 'id' ? 'default' : 'ghost'}
+          size="sm"
           onClick={() => restart('id')}
-          className={`px-3 py-1 rounded ${language === 'id' ? 'bg-white text-black' : 'bg-neutral-800'}`}
         >
           Indonesia
-        </button>
-        <button
+        </Button>
+        <Button
+          variant={language === 'en' ? 'default' : 'ghost'}
+          size="sm"
           onClick={() => restart('en')}
-          className={`px-3 py-1 rounded ${language === 'en' ? 'bg-white text-black' : 'bg-neutral-800'}`}
         >
           English
-        </button>
+        </Button>
       </div>
 
       {!finished ? (
-        <>
-          <p className="font-mono text-lg mb-4 leading-relaxed">
+        <div className="space-y-6">
+          <p className="font-mono text-xl leading-relaxed tracking-wide">
             {targetText.split('').map((char, i) => {
-              let colorClass = 'text-neutral-500'
+              let colorClass = 'text-muted-foreground/50'
               if (i < input.length) {
                 colorClass =
-                  input[i] === char ? 'text-green-400' : 'text-red-400'
+                  input[i] === char ? 'text-foreground' : 'text-destructive'
               }
               return (
                 <span key={i} className={colorClass}>
@@ -100,22 +104,23 @@ export default function TestPage() {
             autoFocus
             value={input}
             onChange={(e) => handleChange(e.target.value)}
-            className="w-full bg-neutral-900 border border-neutral-700 rounded p-3 font-mono"
+            className="w-full rounded-lg border border-border bg-transparent px-4 py-3 font-mono text-lg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
             placeholder="Mulai mengetik di sini..."
           />
-        </>
-      ) : (
-        <div>
-          <p className="text-2xl mb-2">
-            {result?.wpm} WPM · {result?.accuracy}% akurasi
-          </p>
-          <button
-            onClick={() => restart()}
-            className="mt-4 px-4 py-2 bg-white text-black rounded"
-          >
-            Tes lagi
-          </button>
         </div>
+      ) : (
+        <Card>
+          <CardContent className="space-y-4 py-2">
+            <p className="font-mono text-3xl">
+              {result?.wpm}{' '}
+              <span className="text-base text-muted-foreground">WPM</span>
+            </p>
+            <p className="text-sm text-muted-foreground">
+              {result?.accuracy}% akurasi
+            </p>
+            <Button onClick={() => restart()}>Tes lagi</Button>
+          </CardContent>
+        </Card>
       )}
     </div>
   )
