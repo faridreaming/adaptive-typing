@@ -93,4 +93,34 @@ describe('breakdownWordResults', () => {
       { word: 'dengan', isError: true },
     ])
   })
+
+  it('marks a word as error if it was mistyped then corrected via backspace', () => {
+    // Target: "yang dan dengan". User typed wrong char at position 0,
+    // then backspaced and fixed it — final text is correct, but
+    // charHadError[0] = true records the mistake happened.
+    const charHadError = [true, false, false, false]
+    const result = breakdownWordResults(
+      'yang dan dengan',
+      'yang dan dengan',
+      charHadError,
+    )
+    expect(result[0]).toEqual({ word: 'yang', isError: true })
+    expect(result[1]).toEqual({ word: 'dan', isError: false })
+    expect(result[2]).toEqual({ word: 'dengan', isError: false })
+  })
+
+  it('does not flag a word as error when charHadError is all false', () => {
+    const charHadError = new Array(15).fill(false)
+    const result = breakdownWordResults(
+      'yang dan dengan',
+      'yang dan dengan',
+      charHadError,
+    )
+    expect(result.every((r) => !r.isError)).toBe(true)
+  })
+
+  it('still works when charHadError is omitted (backward compatible)', () => {
+    const result = breakdownWordResults('yang dan dengan', 'yng dan dengan')
+    expect(result[0].isError).toBe(true)
+  })
 })

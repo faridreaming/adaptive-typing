@@ -48,24 +48,39 @@ export function calculateAccuracy(
  * Compares what the user typed against the target text, word by word
  * (split on spaces), and returns per-word exposure/error counts.
  *
- * A word counts as an error if the substring the user typed for that word
- * doesn't exactly match the target word. This is intentionally simple for
- * v1 — it doesn't try to distinguish "fixed via backspace" from "typed
- * wrong and moved on" (see PRD open question #3). Backspace corrections
- * aren't tracked here at all yet; that needs keystroke-level capture,
- * which is a deliberate v2 scope decision, not an oversight.
+ * A word counts as an error if EITHER:
+ * (a) the final submitted word doesn't match the target word, OR
+ * (b) `charHadError` shows the user typed a wrong character somewhere in
+ *     that word's range at any point — even if they backspaced and fixed
+ *     it before moving on.
+ *
+ * Resolves PRD open question #3 in favor of counting corrections: v1
+ * originally didn't, but real dogfooding showed error_count staying at
+ * ~0 for a user who reflexively self-corrects, which defeats the app's
+ * whole point of surfacing words that actually trip you up.
+ *
+ * charHadError defaults to [] so callers/tests that only care about the
+ * final-mismatch case keep working unchanged.
  */
 export function breakdownWordResults(
   targetText: string,
   typedText: string,
+  charHadError: boolean[] = [],
 ): Array<{ word: string; isError: boolean }> {
   const targetWords = targetText.split(' ')
   const typedWords = typedText.split(' ')
 
-  return targetWords.map((word, i) => ({
-    word,
-    isError: typedWords[i] !== word,
-  }))
+  let charOffset = 0
+  return targetWords.map((word, i) => {
+    const start = charOffset
+    const end = start + word.length
+    charOffset = end + 1 // +1 skips the space separator
+
+    const finalMismatch = typedWords[i] !== word
+    const wasCorrected = charHadError.slice(start, end).some(Boolean)
+
+    return { word, isError: finalMismatch || wasCorrected }
+  })
 }
 
 /**

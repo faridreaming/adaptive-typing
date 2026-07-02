@@ -1,12 +1,18 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { corpusId, corpusEn } from '#data/corpus'
-import { calculateWpm, calculateAccuracy } from '#lib/scoring'
+import {
+  calculateWpm,
+  calculateAccuracy,
+  pickWeightedWords,
+} from '#lib/scoring'
 import { saveSession } from '#lib/sessions'
+import { fetchWordStats } from '#lib/wordStats'
 import { useAuth } from '#hooks/useAuth'
 import { Button } from '#components/ui/button'
 import { Card, CardContent } from '#components/ui/card'
 
 type Language = 'id' | 'en'
+type Mode = 'normal' | 'weak_point_drill'
 
 function generateText(language: Language, wordCount = 20): string {
   const corpus = language === 'id' ? corpusId : corpusEn
@@ -19,25 +25,70 @@ function generateText(language: Language, wordCount = 20): string {
 
 interface Session {
   language: Language
+  mode: Mode
   targetText: string
+  // True when the user picked Weak-Point Drill but has no word_stats yet
+  // for this language — we silently fall back to a normal random text
+  // instead of showing a broken/empty test.
+  usedFallback: boolean
 }
 
-function createSession(language: Language): Session {
-  return { language, targetText: generateText(language) }
+/**
+ * Builds a new session. 'normal' mode is a plain random pick. For
+ * 'weak_point_drill', we hit Supabase for this user's word_stats in the
+ * selected language and feed that into pickWeightedWords. No history yet
+ * for this language (cold start — PRD open question #2)? Fall back to a
+ * normal random text rather than blocking the user.
+ */
+async function buildSession(
+  language: Language,
+  mode: Mode,
+  userId: string | undefined,
+): Promise<Session> {
+  if (mode === 'weak_point_drill' && userId) {
+    const stats = await fetchWordStats({ userId, language })
+    if (stats.length > 0) {
+      const words = pickWeightedWords(stats, 20)
+      return {
+        language,
+        mode,
+        targetText: words.join(' '),
+        usedFallback: false,
+      }
+    }
+  }
+
+  return {
+    language,
+    mode,
+    targetText: generateText(language),
+    usedFallback: mode === 'weak_point_drill',
+  }
+}
+
+function createInitialSession(): Session {
+  return {
+    language: 'id',
+    mode: 'normal',
+    targetText: generateText('id'),
+    usedFallback: false,
+  }
 }
 
 export default function TestPage() {
   const { session: authSession } = useAuth()
-  const [session, setSession] = useState<Session>(() => createSession('id'))
+  const [session, setSession] = useState<Session>(createInitialSession)
   const [input, setInput] = useState('')
+  const [charHadError, setCharHadError] = useState<boolean[]>([])
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [finished, setFinished] = useState(false)
+  const [loadingSession, setLoadingSession] = useState(false)
   const [saveStatus, setSaveStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle')
   const inputRef = useRef<HTMLInputElement>(null)
 
-  const { language, targetText } = session
+  const { language, mode, targetText, usedFallback } = session
 
   const result = useMemo(() => {
     if (!finished || !startedAt) return null
@@ -54,9 +105,6 @@ export default function TestPage() {
     }
   }, [finished, startedAt, input, targetText])
 
-  // Save to Supabase once, right when a session finishes. The [finished]
-  // dependency (not [input]) is what keeps this from firing on every
-  // keystroke — it only runs on the true/false transition.
   useEffect(() => {
     if (!finished || !result || !startedAt || !authSession) return
 
@@ -64,42 +112,63 @@ export default function TestPage() {
     saveSession({
       userId: authSession.user.id,
       language,
-      mode: 'normal',
+      mode,
       targetText,
       typedText: input,
       wpm: result.wpm,
       accuracy: result.accuracy,
       startedAt,
+      charHadError,
     })
       .then(() => setSaveStatus('saved'))
       .catch((err) => {
         console.error(err)
         setSaveStatus('error')
       })
-    // Only re-run when a session actually finishes, not on every input change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished])
 
   function handleChange(value: string) {
     if (startedAt === null) setStartedAt(Date.now())
+
+    // Only diff newly-added characters. We never clear a flag on
+    // backspace — the point is remembering the mistake happened, not
+    // just whether the final result looks clean.
+    if (value.length > input.length) {
+      setCharHadError((prev) => {
+        const next = [...prev]
+        for (let i = input.length; i < value.length; i++) {
+          if (value[i] !== targetText[i]) next[i] = true
+        }
+        return next
+      })
+    }
+
     setInput(value)
     if (value.length >= targetText.length) {
       setFinished(true)
     }
   }
 
-  function restart(newLanguage: Language = language) {
-    setSession(createSession(newLanguage))
+  async function restart(
+    newLanguage: Language = language,
+    newMode: Mode = mode,
+  ) {
+    setLoadingSession(true)
+    const next = await buildSession(newLanguage, newMode, authSession?.user.id)
+    setSession(next)
     setInput('')
     setStartedAt(null)
     setFinished(false)
     setSaveStatus('idle')
+    setLoadingSession(false)
     setTimeout(() => inputRef.current?.focus(), 0)
+    setCharHadError([])
   }
 
   return (
     <div className="mx-auto max-w-2xl p-8">
-      <div className="mb-8 flex gap-2">
+      <div className="mb-4 flex gap-2">
         <Button
           variant={language === 'id' ? 'default' : 'ghost'}
           size="sm"
@@ -116,7 +185,32 @@ export default function TestPage() {
         </Button>
       </div>
 
-      {!finished ? (
+      <div className="mb-8 flex gap-2">
+        <Button
+          variant={mode === 'normal' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => restart(language, 'normal')}
+        >
+          Normal
+        </Button>
+        <Button
+          variant={mode === 'weak_point_drill' ? 'default' : 'ghost'}
+          size="sm"
+          onClick={() => restart(language, 'weak_point_drill')}
+        >
+          Weak-Point Drill
+        </Button>
+      </div>
+
+      {usedFallback && (
+        <p className="mb-4 text-xs text-muted-foreground">
+          Belum ada histori kata lemah untuk bahasa ini — pakai teks acak dulu.
+        </p>
+      )}
+
+      {loadingSession ? (
+        <p className="text-sm text-muted-foreground">Menyiapkan teks...</p>
+      ) : !finished ? (
         <div className="space-y-6">
           <p className="font-mono text-xl leading-relaxed tracking-wide">
             {targetText.split('').map((char, i) => {

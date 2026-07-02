@@ -10,6 +10,7 @@ interface SaveSessionParams {
   wpm: number
   accuracy: number
   startedAt: number
+  charHadError: boolean[]
 }
 
 /**
@@ -32,6 +33,7 @@ export async function saveSession(params: SaveSessionParams) {
     wpm,
     accuracy,
     startedAt,
+    charHadError,
   } = params
 
   const { error: sessionError } = await supabase.from('sessions').insert({
@@ -47,7 +49,7 @@ export async function saveSession(params: SaveSessionParams) {
     throw new Error(`Failed to save session: ${sessionError.message}`)
   }
 
-  const wordResults = breakdownWordResults(targetText, typedText)
+  const wordResults = breakdownWordResults(targetText, typedText, charHadError)
 
   // Aggregate in case the same word appears more than once in one test
   // (e.g. "yang" showing up 3 times in a 20-word passage) — otherwise
