@@ -4,6 +4,7 @@ import {
   calculateWpm,
   calculateAccuracy,
   pickWeightedWords,
+  breakdownWordResults,
 } from './scoring'
 
 describe('calculateErrorRate', () => {
@@ -62,5 +63,34 @@ describe('pickWeightedWords', () => {
 
   it('returns empty array when no stats given', () => {
     expect(pickWeightedWords([], 5)).toEqual([])
+  })
+})
+
+describe('breakdownWordResults', () => {
+  it('marks all words correct when typed text matches exactly', () => {
+    const result = breakdownWordResults('yang dan dengan', 'yang dan dengan')
+    expect(result).toEqual([
+      { word: 'yang', isError: false },
+      { word: 'dan', isError: false },
+      { word: 'dengan', isError: false },
+    ])
+  })
+
+  it('marks a word as error when it does not match', () => {
+    const result = breakdownWordResults('yang dan dengan', 'yng dan dengan')
+    expect(result).toEqual([
+      { word: 'yang', isError: true },
+      { word: 'dan', isError: false },
+      { word: 'dengan', isError: false },
+    ])
+  })
+
+  it('marks missing trailing words as error (test ended early)', () => {
+    const result = breakdownWordResults('yang dan dengan', 'yang dan')
+    expect(result).toEqual([
+      { word: 'yang', isError: false },
+      { word: 'dan', isError: false },
+      { word: 'dengan', isError: true },
+    ])
   })
 })

@@ -1,6 +1,8 @@
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { corpusId, corpusEn } from '#data/corpus'
 import { calculateWpm, calculateAccuracy } from '#lib/scoring'
+import { saveSession } from '#lib/sessions'
+import { useAuth } from '#hooks/useAuth'
 import { Button } from '#components/ui/button'
 import { Card, CardContent } from '#components/ui/card'
 
@@ -25,10 +27,14 @@ function createSession(language: Language): Session {
 }
 
 export default function TestPage() {
+  const { session: authSession } = useAuth()
   const [session, setSession] = useState<Session>(() => createSession('id'))
   const [input, setInput] = useState('')
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [finished, setFinished] = useState(false)
+  const [saveStatus, setSaveStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle')
   const inputRef = useRef<HTMLInputElement>(null)
 
   const { language, targetText } = session
@@ -48,6 +54,32 @@ export default function TestPage() {
     }
   }, [finished, startedAt, input, targetText])
 
+  // Save to Supabase once, right when a session finishes. The [finished]
+  // dependency (not [input]) is what keeps this from firing on every
+  // keystroke — it only runs on the true/false transition.
+  useEffect(() => {
+    if (!finished || !result || !startedAt || !authSession) return
+
+    setSaveStatus('saving')
+    saveSession({
+      userId: authSession.user.id,
+      language,
+      mode: 'normal',
+      targetText,
+      typedText: input,
+      wpm: result.wpm,
+      accuracy: result.accuracy,
+      startedAt,
+    })
+      .then(() => setSaveStatus('saved'))
+      .catch((err) => {
+        console.error(err)
+        setSaveStatus('error')
+      })
+    // Only re-run when a session actually finishes, not on every input change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [finished])
+
   function handleChange(value: string) {
     if (startedAt === null) setStartedAt(Date.now())
     setInput(value)
@@ -61,6 +93,7 @@ export default function TestPage() {
     setInput('')
     setStartedAt(null)
     setFinished(false)
+    setSaveStatus('idle')
     setTimeout(() => inputRef.current?.focus(), 0)
   }
 
@@ -117,6 +150,11 @@ export default function TestPage() {
             </p>
             <p className="text-sm text-muted-foreground">
               {result?.accuracy}% akurasi
+            </p>
+            <p className="text-xs text-muted-foreground">
+              {saveStatus === 'saving' && 'Menyimpan...'}
+              {saveStatus === 'saved' && 'Tersimpan.'}
+              {saveStatus === 'error' && 'Gagal menyimpan, cek console.'}
             </p>
             <Button onClick={() => restart()}>Tes lagi</Button>
           </CardContent>

@@ -45,7 +45,30 @@ export function calculateAccuracy(
 }
 
 /**
- * Weighted random sampling: words with higher error rate are more likely
+ * Compares what the user typed against the target text, word by word
+ * (split on spaces), and returns per-word exposure/error counts.
+ *
+ * A word counts as an error if the substring the user typed for that word
+ * doesn't exactly match the target word. This is intentionally simple for
+ * v1 — it doesn't try to distinguish "fixed via backspace" from "typed
+ * wrong and moved on" (see PRD open question #3). Backspace corrections
+ * aren't tracked here at all yet; that needs keystroke-level capture,
+ * which is a deliberate v2 scope decision, not an oversight.
+ */
+export function breakdownWordResults(
+  targetText: string,
+  typedText: string,
+): Array<{ word: string; isError: boolean }> {
+  const targetWords = targetText.split(' ')
+  const typedWords = typedText.split(' ')
+
+  return targetWords.map((word, i) => ({
+    word,
+    isError: typedWords[i] !== word,
+  }))
+}
+
+/**
  * to be picked. Every word still has a small baseline chance (minWeight)
  * so we don't hard-filter out words that are currently "fine" — this is
  * the mechanism that avoids pure repetition drilling (see PRD section on
