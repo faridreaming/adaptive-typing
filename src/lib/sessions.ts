@@ -39,6 +39,7 @@ export async function saveSession(params: SaveSessionParams) {
   const { error: sessionError } = await supabase.from('sessions').insert({
     user_id: userId,
     mode,
+    language,
     wpm,
     accuracy,
     started_at: new Date(startedAt).toISOString(),
