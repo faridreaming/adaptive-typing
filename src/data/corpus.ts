@@ -1,95 +1,24 @@
-// Starter corpus — small on purpose. Expand later once cold-start mode
-// is confirmed working. These are just common short/medium frequency
-// words to seed the "Normal" mode before any personal history exists.
+type Language = 'id' | 'en'
 
-export const corpusId: string[] = [
-  'yang',
-  'dan',
-  'di',
-  'itu',
-  'dengan',
-  'untuk',
-  'tidak',
-  'ini',
-  'dari',
-  'akan',
-  'ada',
-  'pada',
-  'saya',
-  'juga',
-  'ke',
-  'karena',
-  'bisa',
-  'kita',
-  'atau',
-  'sudah',
-  'mereka',
-  'lebih',
-  'hanya',
-  'harus',
-  'kalau',
-  'seperti',
-  'setelah',
-  'masih',
-  'sangat',
-  'namun',
-  'saat',
-  'tersebut',
-  'dapat',
-  'oleh',
-  'jika',
-  'antara',
-  'menjadi',
-  'sebagai',
-  'terhadap',
-  'orang',
-  'waktu',
-  'melakukan',
-  'membuat',
-]
+let corpusIdCache: string[] | null = null
+let corpusEnCache: string[] | null = null
 
-export const corpusEn: string[] = [
-  'the',
-  'and',
-  'to',
-  'of',
-  'a',
-  'in',
-  'is',
-  'that',
-  'it',
-  'for',
-  'with',
-  'as',
-  'was',
-  'on',
-  'are',
-  'this',
-  'be',
-  'have',
-  'not',
-  'or',
-  'by',
-  'at',
-  'from',
-  'but',
-  'they',
-  'we',
-  'you',
-  'which',
-  'their',
-  'will',
-  'would',
-  'there',
-  'can',
-  'about',
-  'if',
-  'when',
-  'because',
-  'through',
-  'between',
-  'people',
-  'time',
-  'make',
-  'system',
-]
+/**
+ * Lazily loads and caches the word corpus for a language. Corpus data
+ * lives in separate JSON files (not inline arrays) so it's code-split
+ * from the main bundle — the word lists only get fetched once a test
+ * actually needs them, not on initial app load.
+ */
+export async function getCorpus(language: Language): Promise<string[]> {
+  if (language === 'id') {
+    if (!corpusIdCache) {
+      corpusIdCache = (await import('./corpus-id.json')).default
+    }
+    return corpusIdCache
+  }
+
+  if (!corpusEnCache) {
+    corpusEnCache = (await import('./corpus-en.json')).default
+  }
+  return corpusEnCache
+}

@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect } from 'react'
-import { corpusId, corpusEn } from '#data/corpus'
+import { getCorpus } from '#data/corpus'
 import {
   calculateWpm,
   calculateAccuracy,
@@ -14,8 +14,11 @@ import { Card, CardContent } from '#components/ui/card'
 type Language = 'id' | 'en'
 type Mode = 'normal' | 'weak_point_drill'
 
-function generateText(language: Language, wordCount = 20): string {
-  const corpus = language === 'id' ? corpusId : corpusEn
+async function generateText(
+  language: Language,
+  wordCount = 20,
+): Promise<string> {
+  const corpus = await getCorpus(language)
   const words: string[] = []
   for (let i = 0; i < wordCount; i++) {
     words.push(corpus[Math.floor(Math.random() * corpus.length)])
@@ -61,18 +64,13 @@ async function buildSession(
   return {
     language,
     mode,
-    targetText: generateText(language),
+    targetText: await generateText(language),
     usedFallback: mode === 'weak_point_drill',
   }
 }
 
 function createInitialSession(): Session {
-  return {
-    language: 'id',
-    mode: 'normal',
-    targetText: generateText('id'),
-    usedFallback: false,
-  }
+  return { language: 'id', mode: 'normal', targetText: '', usedFallback: false }
 }
 
 export default function TestPage() {
@@ -82,7 +80,7 @@ export default function TestPage() {
   const [charHadError, setCharHadError] = useState<boolean[]>([])
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [finished, setFinished] = useState(false)
-  const [loadingSession, setLoadingSession] = useState(false)
+  const [loadingSession, setLoadingSession] = useState(true)
   const [saveStatus, setSaveStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle')
@@ -127,6 +125,11 @@ export default function TestPage() {
       })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [finished])
+
+  useEffect(() => {
+    restart('id', 'normal')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function handleChange(value: string) {
     if (startedAt === null) setStartedAt(Date.now())
