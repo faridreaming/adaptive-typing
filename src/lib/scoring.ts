@@ -112,3 +112,20 @@ export function pickWeightedWords(
   }
   return picked
 }
+
+export type CharStatus = 'pending' | 'correct' | 'incorrect'
+
+/**
+ * Classifies a single character position in the live typing preview.
+ * Extracted out of TestPage's JSX so it's testable as a pure function —
+ * the markup around it will likely keep changing during dogfooding, but
+ * this classification rule is the stable part.
+ */
+export function getCharStatus(
+  index: number,
+  input: string,
+  targetText: string,
+): CharStatus {
+  if (index >= input.length) return 'pending'
+  return input[index] === targetText[index] ? 'correct' : 'incorrect'
+}

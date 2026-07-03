@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest'
+import { getCharStatus } from './scoring'
 import {
   calculateErrorRate,
   calculateWpm,
@@ -122,5 +123,19 @@ describe('breakdownWordResults', () => {
   it('still works when charHadError is omitted (backward compatible)', () => {
     const result = breakdownWordResults('yang dan dengan', 'yng dan dengan')
     expect(result[0].isError).toBe(true)
+  })
+})
+
+describe('getCharStatus', () => {
+  it('returns pending for a character not yet typed', () => {
+    expect(getCharStatus(5, 'hal', 'halo dunia')).toBe('pending')
+  })
+
+  it('returns correct when the typed character matches', () => {
+    expect(getCharStatus(0, 'halo', 'halo dunia')).toBe('correct')
+  })
+
+  it('returns incorrect when the typed character does not match', () => {
+    expect(getCharStatus(0, 'xalo', 'halo dunia')).toBe('incorrect')
   })
 })

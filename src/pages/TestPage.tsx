@@ -4,7 +4,9 @@ import {
   calculateWpm,
   calculateAccuracy,
   pickWeightedWords,
+  getCharStatus,
 } from '#lib/scoring'
+
 import { saveSession } from '#lib/sessions'
 import { fetchWordStats } from '#lib/wordStats'
 import { useAuth } from '#hooks/useAuth'
@@ -217,11 +219,13 @@ export default function TestPage() {
         <div className="space-y-6">
           <p className="font-mono text-xl leading-relaxed tracking-wide">
             {targetText.split('').map((char, i) => {
-              let colorClass = 'text-muted-foreground/50'
-              if (i < input.length) {
-                colorClass =
-                  input[i] === char ? 'text-foreground' : 'text-destructive'
-              }
+              const status = getCharStatus(i, input, targetText)
+              const colorClass =
+                status === 'pending'
+                  ? 'text-muted-foreground/50'
+                  : status === 'correct'
+                    ? 'text-foreground'
+                    : 'text-destructive'
               return (
                 <span key={i} className={colorClass}>
                   {char}
