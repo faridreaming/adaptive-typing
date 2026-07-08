@@ -95,7 +95,8 @@ export default function TestPage() {
     const elapsedMs = Date.now() - startedAt
     let correctChars = 0
     for (let i = 0; i < targetText.length; i++) {
-      if (input[i] === targetText[i]) correctChars++
+      const neverHadError = !charHadError[i]
+      if (input[i] === targetText[i] && neverHadError) correctChars++
     }
     return {
       wpm: Math.round(calculateWpm(input.length, elapsedMs)),
@@ -103,7 +104,7 @@ export default function TestPage() {
         calculateAccuracy(correctChars, targetText.length) * 100,
       ),
     }
-  }, [finished, startedAt, input, targetText])
+  }, [finished, startedAt, input, targetText, charHadError])
 
   useEffect(() => {
     if (!finished || !result || !startedAt || !authSession) return
