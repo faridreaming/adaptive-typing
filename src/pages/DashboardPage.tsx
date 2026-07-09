@@ -52,13 +52,33 @@ export default function DashboardPage() {
 
   const chartData = sessions.map((s, i) => ({
     index: i + 1,
-    date: new Date(s.startedAt).toLocaleDateString('id-ID', {
+    fullDate: new Date(s.startedAt).toLocaleString('id-ID', {
       day: '2-digit',
       month: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
     }),
     wpmNormal: s.mode === 'normal' ? s.wpm : null,
     wpmDrill: s.mode === 'weak_point_drill' ? s.wpm : null,
   }))
+
+  function ChartTooltip({ active, payload }: any) {
+    if (!active || !payload?.length) return null
+    const point = payload[0].payload
+    const isNormal = point.wpmNormal != null
+    return (
+      <div className="rounded-lg border border-border bg-background p-3 shadow-sm">
+        <p className="text-sm font-medium">{point.fullDate}</p>
+        <p
+          className="text-sm"
+          style={{ color: isNormal ? '#8884d8' : '#f97316' }}
+        >
+          {isNormal ? 'Normal' : 'Weak-Point Drill'}:{' '}
+          {isNormal ? point.wpmNormal : point.wpmDrill}
+        </p>
+      </div>
+    )
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-8 p-8">
@@ -99,9 +119,15 @@ export default function DashboardPage() {
               <ResponsiveContainer width="100%" height={280}>
                 <LineChart data={chartData}>
                   <CartesianGrid strokeDasharray="3 3" opacity={0.2} />
-                  <XAxis dataKey="date" fontSize={12} />
+                  <XAxis
+                    dataKey="index"
+                    tickFormatter={(i) =>
+                      chartData[i - 1]?.fullDate.split(',')[0] ?? ''
+                    }
+                    fontSize={12}
+                  />
                   <YAxis fontSize={12} />
-                  <Tooltip />
+                  <Tooltip content={<ChartTooltip />} />
                   <Legend />
                   <Line
                     type="monotone"
