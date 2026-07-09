@@ -48,7 +48,7 @@ export default function DashboardPage() {
         setError('Gagal memuat data dashboard.')
       })
       .finally(() => setLoading(false))
-  }, [authSession, language])
+  }, [authSession?.user.id, language])
 
   const chartData = sessions.map((s, i) => ({
     index: i + 1,
