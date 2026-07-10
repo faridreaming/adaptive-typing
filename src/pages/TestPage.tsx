@@ -6,7 +6,6 @@ import {
   pickWeightedWords,
   getCharStatus,
 } from '#lib/scoring'
-
 import { saveSession } from '#lib/sessions'
 import { fetchWordStats } from '#lib/wordStats'
 import { useAuth } from '#hooks/useAuth'
@@ -15,6 +14,21 @@ import { Card, CardContent } from '#components/ui/card'
 
 type Language = 'id' | 'en'
 type Mode = 'normal' | 'weak_point_drill'
+
+interface CommittedWord {
+  word: string
+  typed: string
+  isError: boolean
+  finalMismatch: boolean
+  charHadError: boolean[] // baru — dipakai buat restore pas backspace-back
+}
+
+interface Session {
+  language: Language
+  mode: Mode
+  targetText: string
+  usedFallback: boolean
+}
 
 async function generateText(
   language: Language,
@@ -28,23 +42,6 @@ async function generateText(
   return words.join(' ')
 }
 
-interface Session {
-  language: Language
-  mode: Mode
-  targetText: string
-  // True when the user picked Weak-Point Drill but has no word_stats yet
-  // for this language — we silently fall back to a normal random text
-  // instead of showing a broken/empty test.
-  usedFallback: boolean
-}
-
-/**
- * Builds a new session. 'normal' mode is a plain random pick. For
- * 'weak_point_drill', we hit Supabase for this user's word_stats in the
- * selected language and feed that into pickWeightedWords. No history yet
- * for this language (cold start — PRD open question #2)? Fall back to a
- * normal random text rather than blocking the user.
- */
 async function buildSession(
   language: Language,
   mode: Mode,
@@ -62,7 +59,6 @@ async function buildSession(
       }
     }
   }
-
   return {
     language,
     mode,
@@ -78,48 +74,75 @@ function createInitialSession(): Session {
 export default function TestPage() {
   const { session: authSession } = useAuth()
   const [session, setSession] = useState<Session>(createInitialSession)
-  const [input, setInput] = useState('')
-  const [charHadError, setCharHadError] = useState<boolean[]>([])
-  const [startedAt, setStartedAt] = useState<number | null>(null)
-  const [finished, setFinished] = useState(false)
   const [loadingSession, setLoadingSession] = useState(true)
+  const [finished, setFinished] = useState(false)
+  const [startedAt, setStartedAt] = useState<number | null>(null)
   const [saveStatus, setSaveStatus] = useState<
     'idle' | 'saving' | 'saved' | 'error'
   >('idle')
-  const inputRef = useRef<HTMLInputElement>(null)
 
+  // Per-word state machine — replaces the old single-string comparison.
+  const [committedWords, setCommittedWords] = useState<CommittedWord[]>([])
+  const [currentWordIndex, setCurrentWordIndex] = useState(0)
+  const [currentInput, setCurrentInput] = useState('')
+  const [currentCharHadError, setCurrentCharHadError] = useState<boolean[]>([])
+  const [currentWordHadPriorMismatch, setCurrentWordHadPriorMismatch] =
+    useState(false)
+
+  const inputRef = useRef<HTMLInputElement>(null)
   const { language, mode, targetText, usedFallback } = session
+  const targetWords = useMemo(
+    () => targetText.split(' ').filter(Boolean),
+    [targetText],
+  )
+  const currentTargetWord = targetWords[currentWordIndex] ?? ''
 
   const result = useMemo(() => {
     if (!finished || !startedAt) return null
     const elapsedMs = Date.now() - startedAt
+    const totalChars = committedWords.reduce(
+      (sum, w) => sum + w.typed.length + 1,
+      0,
+    )
+
+    // Char-level accuracy: for each target word, count positions that were
+    // both never mistyped (charHadError[i] === false) AND match the final
+    // submitted char. This deliberately doesn't account for
+    // currentWordHadPriorMismatch — a word redone correctly after a failed
+    // first submission still scores 100% here; that "it went wrong once"
+    // signal already lives in word_stats.error_count and the amber color,
+    // so it's not double-counted into this precision metric.
     let correctChars = 0
-    for (let i = 0; i < targetText.length; i++) {
-      const neverHadError = !charHadError[i]
-      if (input[i] === targetText[i] && neverHadError) correctChars++
+    let totalTargetChars = 0
+    for (const w of committedWords) {
+      totalTargetChars += w.word.length
+      for (let i = 0; i < w.word.length; i++) {
+        if (!w.charHadError[i] && w.typed[i] === w.word[i]) correctChars++
+      }
     }
+
     return {
-      wpm: Math.round(calculateWpm(input.length, elapsedMs)),
+      wpm: Math.round(calculateWpm(totalChars, elapsedMs)),
       accuracy: Math.round(
-        calculateAccuracy(correctChars, targetText.length) * 100,
+        calculateAccuracy(correctChars, totalTargetChars) * 100,
       ),
     }
-  }, [finished, startedAt, input, targetText, charHadError])
+  }, [finished, startedAt, committedWords])
 
   useEffect(() => {
     if (!finished || !result || !startedAt || !authSession) return
-
     setSaveStatus('saving')
     saveSession({
       userId: authSession.user.id,
       language,
       mode,
-      targetText,
-      typedText: input,
       wpm: result.wpm,
       accuracy: result.accuracy,
       startedAt,
-      charHadError,
+      wordResults: committedWords.map(({ word, isError }) => ({
+        word,
+        isError,
+      })),
     })
       .then(() => setSaveStatus('saved'))
       .catch((err) => {
@@ -134,26 +157,80 @@ export default function TestPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  function commitWord(typed: string, charHadError: boolean[]) {
+    const word = currentTargetWord
+    const finalMismatch = typed !== word
+    const isError =
+      finalMismatch || charHadError.some(Boolean) || currentWordHadPriorMismatch
+
+    setCommittedWords((prev) => [
+      ...prev,
+      { word, typed, isError, finalMismatch, charHadError },
+    ])
+    setCurrentInput('')
+    setCurrentCharHadError([])
+    setCurrentWordHadPriorMismatch(false) // reset — flag ini scope-nya per kata
+
+    const nextIndex = currentWordIndex + 1
+    setCurrentWordIndex(nextIndex)
+    if (nextIndex >= targetWords.length) setFinished(true)
+  }
+
   function handleChange(value: string) {
     if (startedAt === null) setStartedAt(Date.now())
 
-    // Only diff newly-added characters. We never clear a flag on
-    // backspace — the point is remembering the mistake happened, not
-    // just whether the final result looks clean.
-    if (value.length > input.length) {
-      setCharHadError((prev) => {
-        const next = [...prev]
-        for (let i = input.length; i < value.length; i++) {
-          if (value[i] !== targetText[i]) next[i] = true
-        }
-        return next
-      })
+    let updatedErrors = currentCharHadError
+    if (value.length > currentInput.length) {
+      updatedErrors = [...currentCharHadError]
+      for (let i = currentInput.length; i < value.length; i++) {
+        if (value[i] !== currentTargetWord[i]) updatedErrors[i] = true
+      }
+      setCurrentCharHadError(updatedErrors)
     }
 
-    setInput(value)
-    if (value.length >= targetText.length) {
-      setFinished(true)
+    setCurrentInput(value)
+
+    // Last word has no trailing space to commit on — auto-commit once
+    // its length reaches the target.
+    const isLastWord = currentWordIndex === targetWords.length - 1
+    if (isLastWord && value.length >= currentTargetWord.length) {
+      commitWord(value, updatedErrors)
     }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (
+      e.key === 'Backspace' &&
+      currentInput.length === 0 &&
+      committedWords.length > 0
+    ) {
+      const lastWord = committedWords[committedWords.length - 1]
+      if (lastWord.finalMismatch) {
+        e.preventDefault()
+        uncommitLastWord()
+      }
+      // kalau lastWord benar, sengaja dibiarin — backspace berhenti di sini
+      return
+    }
+
+    if (e.key === ' ') {
+      e.preventDefault()
+      if (currentInput.length === 0) return
+      commitWord(currentInput, currentCharHadError)
+    }
+    if (e.key === 'Tab') {
+      e.preventDefault()
+      restart()
+    }
+  }
+
+  function uncommitLastWord() {
+    const last = committedWords[committedWords.length - 1]
+    setCommittedWords((prev) => prev.slice(0, -1))
+    setCurrentWordIndex((i) => i - 1)
+    setCurrentInput(last.typed)
+    setCurrentCharHadError(last.charHadError)
+    setCurrentWordHadPriorMismatch(true) // kata ini pernah gagal submit — jangan lupa walau attempt kedua bener
   }
 
   async function restart(
@@ -163,13 +240,16 @@ export default function TestPage() {
     setLoadingSession(true)
     const next = await buildSession(newLanguage, newMode, authSession?.user.id)
     setSession(next)
-    setInput('')
+    setCommittedWords([])
+    setCurrentWordIndex(0)
+    setCurrentInput('')
+    setCurrentCharHadError([])
     setStartedAt(null)
     setFinished(false)
     setSaveStatus('idle')
     setLoadingSession(false)
     setTimeout(() => inputRef.current?.focus(), 0)
-    setCharHadError([])
+    setCurrentWordHadPriorMismatch(false)
   }
 
   return (
@@ -219,29 +299,59 @@ export default function TestPage() {
       ) : !finished ? (
         <div className="space-y-6">
           <p className="font-mono text-xl leading-relaxed tracking-wide">
-            {targetText.split('').map((char, i) => {
-              const status = getCharStatus(i, input, targetText)
-              const colorClass =
-                status === 'pending'
-                  ? 'text-muted-foreground/50'
-                  : status === 'correct'
-                    ? 'text-foreground'
-                    : 'text-destructive'
+            {committedWords.map((w, i) => {
+              const colorClass = w.finalMismatch
+                ? 'text-destructive'
+                : w.isError
+                  ? 'text-amber-500 dark:text-amber-400'
+                  : 'text-foreground'
               return (
                 <span key={i} className={colorClass}>
-                  {char}
+                  {w.word}{' '}
                 </span>
               )
             })}
+
+            {currentTargetWord &&
+              currentTargetWord.split('').map((char, i) => {
+                const status = getCharStatus(i, currentInput, currentTargetWord)
+                const colorClass =
+                  status === 'pending'
+                    ? 'text-muted-foreground/50'
+                    : status === 'correct'
+                      ? 'text-foreground'
+                      : 'text-destructive'
+                return (
+                  <span key={i} className={colorClass}>
+                    {char}
+                  </span>
+                )
+              })}
+            {currentInput.length > currentTargetWord.length && (
+              <span className="text-destructive underline">
+                {currentInput.slice(currentTargetWord.length)}
+              </span>
+            )}
+            {currentTargetWord && ' '}
+
+            {targetWords.slice(currentWordIndex + 1).map((word, i) => (
+              <span key={i} className="text-muted-foreground/50">
+                {word}{' '}
+              </span>
+            ))}
           </p>
           <input
             ref={inputRef}
             autoFocus
-            value={input}
+            value={currentInput}
             onChange={(e) => handleChange(e.target.value)}
+            onKeyDown={handleKeyDown}
             className="w-full rounded-lg border border-border bg-transparent px-4 py-3 font-mono text-lg outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
-            placeholder="Mulai mengetik di sini..."
+            placeholder="Mulai mengetik..."
           />
+          <p className="mt-2 text-xs text-muted-foreground">
+            Tekan Tab untuk reset cepat.
+          </p>
         </div>
       ) : (
         <Card>

@@ -116,16 +116,15 @@ export function pickWeightedWords(
 export type CharStatus = 'pending' | 'correct' | 'incorrect'
 
 /**
- * Classifies a single character position in the live typing preview.
- * Extracted out of TestPage's JSX so it's testable as a pure function —
- * the markup around it will likely keep changing during dogfooding, but
- * this classification rule is the stable part.
+ * Classifies a character position within the CURRENT WORD (not the whole
+ * text anymore — since the input model is now per-word state machine).
+ * Signature is unchanged from before, just called with word-scoped args.
  */
 export function getCharStatus(
   index: number,
   input: string,
-  targetText: string,
+  word: string,
 ): CharStatus {
   if (index >= input.length) return 'pending'
-  return input[index] === targetText[index] ? 'correct' : 'incorrect'
+  return input[index] === word[index] ? 'correct' : 'incorrect'
 }

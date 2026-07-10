@@ -33,9 +33,7 @@ describe('TestPage', () => {
     const user = userEvent.setup()
     render(<TestPage />)
 
-    const input = await screen.findByPlaceholderText(
-      'Mulai mengetik di sini...',
-    )
+    const input = await screen.findByPlaceholderText('Mulai mengetik...')
 
     // Corpus is mocked to always return "halo", 20 times.
     const targetText = new Array(20).fill('halo').join(' ')
@@ -49,6 +47,7 @@ describe('TestPage', () => {
       userId: 'user-123',
       mode: 'normal',
       language: 'id',
+      wordResults: expect.any(Array),
     })
   })
 })
